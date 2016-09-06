@@ -156,17 +156,32 @@ function Send-SBQueueMessage {
 function Receive-SBQueueMessage {
     [CmdletBinding()]
     param (
-    
+        [Parameter(Mandatory)]
+        [ScriptBlock]$Action
     )
     process {
         PreFlight
         $message = $Script:queueClient.Receive()
-        $message.Complete()
-        $method = ([Microsoft.ServiceBus.Messaging.BrokeredMessage].GetMethods() | ?{$_.Name -eq 'GetBody' -and $_.GetParameters().Count -eq 0})
-        $gMethod = $method.MakeGenericMethod([psobject]) 
-        $msg = $gMethod.Invoke($message,$null)
-        $null = Add-Member -InputObject $message -MemberType NoteProperty -Name body -Value $msg
-        Write-Output -InputObject $message
+        try {
+            $method = ([Microsoft.ServiceBus.Messaging.BrokeredMessage].GetMethods() | ?{$_.Name -eq 'GetBody' -and $_.GetParameters().Count -eq 0})
+            $gMethod = $method.MakeGenericMethod([psobject]) 
+            $msg = $gMethod.Invoke($message,$null)
+            $null = Add-Member -InputObject $message -MemberType NoteProperty -Name body -Value $msg
+            
+            # Invoke the action with the parameter $message
+            # How do we check if the provided scriptblock contains a 
+            # Message parameter?
+            & $Action -Message $message
+
+            # If the action did not throw an exception the Message
+            # we assume that the client code has processed the Message
+            # The message can be set to complete.
+            $message.Complete()
+        }
+        catch [System.Exception] {
+            # Removes the peeklock
+            $message.Abandon()            
+        }
     }
 }
 
@@ -242,16 +257,31 @@ function Send-SBTopicMessage {
 function Receive-SBTopicSubscriptionMessage {
     [CmdletBinding()]
     param (
-
+        [Parameter(Mandatory)]
+        [scriptblock]$Action
     )
     process {
         PreFlight
         $Message = $script:subscriptionClient.Receive()
-        $message.Complete()
-        $method = ([Microsoft.ServiceBus.Messaging.BrokeredMessage].GetMethods() | ?{$_.Name -eq 'GetBody' -and $_.GetParameters().Count -eq 0})
-        $gMethod = $method.MakeGenericMethod([psobject]) 
-        $msg = $gMethod.Invoke($message,$null)
-        $null = Add-Member -InputObject $message -MemberType NoteProperty -Name body -Value $msg
-        Write-Output -InputObject $message
+        try {
+            $method = ([Microsoft.ServiceBus.Messaging.BrokeredMessage].GetMethods() | ?{$_.Name -eq 'GetBody' -and $_.GetParameters().Count -eq 0})
+            $gMethod = $method.MakeGenericMethod([psobject]) 
+            $msg = $gMethod.Invoke($message,$null)
+            $null = Add-Member -InputObject $message -MemberType NoteProperty -Name body -Value $msg
+            
+            # Invoke the action with the parameter $message
+            # How do we check if the provided scriptblock contains a 
+            # Message parameter?
+            & $Action -Message $message
+
+            # If the action did not throw an exception the Message
+            # we assume that the client code has processed the Message
+            # The message can be set to complete.
+            $message.Complete()
+        }
+        catch [System.Exception] {
+            # Removes the peeklock
+            $message.Abandon()            
+        }
     }
 }
